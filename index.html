@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Código de Bypass MDM</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        .container {
+            width: 80%;
+            margin: auto;
+            overflow: hidden;
+        }
+        header {
+            background: #333;
+            color: #fff;
+            padding-top: 30px;
+            min-height: 70px;
+            border-bottom: #0779e4 3px solid;
+        }
+        header h1 {
+            text-align: center;
+            margin: 0;
+        }
+        .main-content {
+            padding: 20px;
+            background: #fff;
+            margin-top: 20px;
+        }
+        .code-block {
+            background: #eee;
+            padding: 20px;
+            border-radius: 5px;
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        footer {
+            background: #333;
+            color: #fff;
+            text-align: center;
+            padding: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Código de Bypass MDM</h1>
+    </header>
+
+    <div class="container main-content">
+        <h2>Instrucciones</h2>
+        <div class="code-block">
+            #define MCBYPASS_CODE_LENGTH 31 // Excluding terminating null.<br>
+            #define MCBYPASS_CODE_BUFFER_LENGTH 32 // Including terminating null.<br>
+            #define MCBYPASS_RAW_BYTES_LENGTH 16<br>
+            #define MCBYPASS_HASH_LENGTH CC_SHA256_DIGEST_LENGTH<br><br>
+
+            - (NSString*) _createNewActivationLockBypassCodeOutHash:(NSString**)outHash<br>
+            {<br>
+            #define RANDOM_BYTES_LENGTH 16<br>
+            #define SALT_LENGTH 4<br>
+                // Encode raw bytes.<br>
+                static const char kSymbols[] = "0123456789ACDEFGHJKLMNPQRTUVWXYZ";<br>
+                                        //  00000000000000001111111111111111<br>
+                                        //  0123456789abcdef0123456789abcdef<br><br>
+
+                // Insert dashes after outputting characters at these positions.<br>
+                static const int kDashPositions[] = { 5, 10, 14, 18, 22 };<br><br>
+
+                char    rawBytes[MCBYPASS_RAW_BYTES_LENGTH];<br>
+                char    code[MCBYPASS_CODE_BUFFER_LENGTH];<br>
+                uint8_t hash[MCBYPASS_HASH_LENGTH];<br>
+                uint8_t salt[SALT_LENGTH] = {0, 0, 0, 0};<br><br>
+
+                arc4random_buf(rawBytes, RANDOM_BYTES_LENGTH);<br>
+                CCKeyDerivationPBKDF(kCCPBKDF2, rawBytes, RANDOM_BYTES_LENGTH, salt, SALT_LENGTH, <br>
+                    kCCPRFHmacAlgSHA256, 50000, hash, CC_SHA256_DIGEST_LENGTH);<br><br>
+
+                if (outHash) {<br>
+                    int                 len = MCBYPASS_HASH_LENGTH;<br>
+                    NSMutableString*    str = [NSMutableString stringWithCapacity:MCBYPASS_HASH_LENGTH * 2 + 1];<br>
+                    const uint8_t*      p   = (const uint8_t*)hash;<br>
+                    while (len-- > 0) [str appendFormat:@"%02X", *p++];<br>
+                    *outHash = [NSString stringWithString:str];<br>
+                }<br><br>
+
+                int         outputCharacterCount = 0;<br>
+                const int*  nextDashPosition     = kDashPositions;<br>
+                char*       outputCursor         = code;<br>
+                uint8_t*    inputCursor          = (uint8_t*)rawBytes;<br><br>
+
+                // Generate output one symbol at a time.<br>
+                #define INPUT_BITS      128<br>
+                #define BITS_PER_BYTE   8<br>
+                #define BITS_PER_SYMBOL 5<br><br>
+
+                int bitsProcessed     = 0;<br>
+                int bitOffsetIntoByte = 0;<br>
+                while (bitsProcessed <= (INPUT_BITS - BITS_PER_SYMBOL)) {<br>
+                    int bitsThisByte = (bitOffsetIntoByte < BITS_PER_BYTE - BITS_PER_SYMBOL <br>
+                        ? BITS_PER_SYMBOL : BITS_PER_BYTE - bitOffsetIntoByte);<br>
+                    int bitsNextByte = (bitsThisByte < BITS_PER_SYMBOL ? BITS_PER_SYMBOL <br>
+                        - bitsThisByte : 0);<br><br>
+
+                    uint8_t value = (((*inputCursor << bitOffsetIntoByte) & 0xff) <br>
+                    >> (BITS_PER_BYTE - bitsThisByte));<br><br>
+
+                    bitOffsetIntoByte += BITS_PER_SYMBOL;<br>
+                    if (bitOffsetIntoByte >= BITS_PER_BYTE) {<br>
+                        bitOffsetIntoByte -= BITS_PER_BYTE;<br>
+                        inputCursor++;<br>
+                    }<br><br>
+
+                    if (bitsNextByte) {<br>
+                        value <<= bitsNextByte;<br>
+                        value |= (*inputCursor >> (BITS_PER_BYTE - bitsNextByte));<br>
+                    }<br><br>
+
+                   *outputCursor++ = kSymbols[value];<br>
+                    if (++outputCharacterCount == *nextDashPosition) {<br>
+                        ++nextDashPosition;<br>
+                        *outputCursor++ = '-';<br>
+                    }<br><br>
+
+                    bitsProcessed += BITS_PER_SYMBOL;<br>
+                }<br><br>
+
+                // Process remaining bits.<br>
+                int bitsRemaining = INPUT_BITS - bitsProcessed;<br>
+                if (bitsRemaining) {<br>
+                    uint8_t value = (((*inputCursor << bitOffsetIntoByte) & 0xff) <br>
+                        >> (BITS_PER_BYTE - bitsRemaining));<br>
+                   *outputCursor++ = kSymbols[value];<br>
+                }<br>
+                *outputCursor = '\0';<br>
+                return [NSString stringWithUTF8String:code];<br>
+            } // -_createNewActivationLockBypassCodeOutHash:
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 Código de Bypass MDM</p>
+    </footer>
+</body>
+</html>
